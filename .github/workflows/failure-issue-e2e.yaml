@@ -1,0 +1,52 @@
+name: Failure issue e2e
+on:
+  push:
+    branches:
+      - failure-issue-e2e
+permissions: {}
+jobs:
+  suite:
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [mutate, validate, generate]
+        k8s: [v1.33.7, v1.34.3]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run chainsaw suite (simulated)
+        run: |
+          printf '=== RUN   chainsaw (test=%s, k8s=%s)\n' "${{ matrix.test }}" "${{ matrix.k8s }}"
+          printf '    | 14:02:11 | conformance | tests/${{ matrix.test }}/deletion-propagation | TRY | RUN\n'
+          printf '\033[32m    | 14:02:14 | conformance | tests/${{ matrix.test }}/deletion-propagation | DONE | PASS\033[0m\n'
+          printf '    | 14:02:15 | conformance | tests/${{ matrix.test }}/cascading-delete | TRY | RUN\n'
+          printf '\033[31m    | 14:02:19 | conformance | tests/${{ matrix.test }}/cascading-delete | ERROR | assertion failed\033[0m\n'
+          printf -- '--- expected\n'
+          printf -- '+++ actual\n'
+          printf '  spec:\n'
+          printf '    rules:\n'
+          printf -- '-     kind: Deployment\n'
+          printf '+     kind: Pod\n'
+          printf '\033[31m--- FAIL: chainsaw/tests/${{ matrix.test }}/cascading-delete (k8s ${{ matrix.k8s }})\033[0m\n'
+          printf 'FAIL: 1 of 2 tests failed\n'
+          exit 1
+  passing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: All good
+        run: echo "all good"
+  sync-issue:
+    if: always()
+    needs:
+      - suite
+      - passing
+    permissions:
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Sync issue
+        uses: ./.github/actions/workflow/failure-issue
+        with:
+          conclusion: ${{ contains(needs.*.result, 'failure') && 'failure' || job.status }}
+          needs: ${{ toJSON(needs) }}
